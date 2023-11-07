@@ -13,7 +13,8 @@ var heartbeatHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 	fmt.Printf("MSG: %s\n", msg.Payload())
 }
 
-const mqttBroker string = "rpi.local:1883"
+// const mqttBroker string = "rpi.local:1883"
+const mqttBroker string = "localhost:1883"
 const mqttClientId string = "heartbeatmetrics"
 const mqttHeartbeatTopic string = "device/+/heartbeat"
 
