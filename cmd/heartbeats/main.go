@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
 	"log"
+	"math/rand"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -13,9 +16,19 @@ var heartbeatHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Mes
 	fmt.Printf("MSG: %s\n", msg.Payload())
 }
 
+func generateClientId() string {
+	currentTime := time.Now().Unix()
+	randomNum := rand.Intn(100)
+	return fmt.Sprintf("heartbeatmetrics-%v-%v", currentTime, randomNum)
+}
+
+func shutdown(mqttClient mqtt.Client) {
+	log.Println("Shutting down now...")
+	mqttClient.Disconnect(1000)
+}
+
 // const mqttBroker string = "rpi.local:1883"
 const mqttBroker string = "localhost:1883"
-const mqttClientId string = "heartbeatmetrics"
 const mqttHeartbeatTopic string = "device/+/heartbeat"
 
 func main() {
@@ -29,7 +42,7 @@ func main() {
 
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(mqttBroker)
-	opts.SetClientID(mqttClientId)
+	opts.SetClientID(generateClientId())
 	// TODO: Get this out of source control
 	opts.SetUsername("rpi")
 	opts.SetPassword("DHV6x48uBtYI83Ppu0tEWBmH")
@@ -37,6 +50,15 @@ func main() {
 	opts.SetPingTimeout(1 * time.Second)
 
 	mqttClient := mqtt.NewClient(opts)
+	defer shutdown(mqttClient)
+
+	caughtSignal := make(chan os.Signal, 1)
+	shutdownSignal := make(chan bool, 1)
+	signal.Notify(caughtSignal, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-caughtSignal
+		shutdownSignal <- true
+	}()
 
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		log.Panicln(token.Error())
@@ -46,7 +68,5 @@ func main() {
 		log.Fatalln(token.Error())
 	}
 
-	time.Sleep(10 * time.Second)
-
-	mqttClient.Disconnect(1000)
+	<-shutdownSignal
 }
