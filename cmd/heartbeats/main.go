@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/eclipse/paho.mqtt.golang"
 	"log"
 	"math/rand"
@@ -19,12 +24,37 @@ func parseDevice(message string) string {
 	return matches[1]
 }
 
+func publishHeartbeat(device string) {
+	_, err := cwClient.PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
+		Namespace: aws.String(heartbeatMetricNamespace),
+		MetricData: []types.MetricDatum{
+			{
+				MetricName: aws.String(heartbeatMetricName),
+				Dimensions: []types.Dimension{
+					{
+						Name:  aws.String(heartbeatMetricDimension),
+						Value: &device,
+					},
+				},
+				Value: aws.Float64(1),
+			},
+		},
+	})
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Printf("Published heartbeat metric for device %s\n", device)
+}
+
 func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 	device := parseDevice(msg.Topic())
 
 	if string(msg.Payload()) == "OK" {
-		fmt.Printf("Received heartbeat for device %s\n", device)
-		// TODO: publish to CloudWatch (in a goroutine; don't block here)
+		fmt.Printf("Received heartbeat message for device %s\n", device)
+		// Publish metric to CloudWatch in a goroutine so we don't block MQTT client
+		go publishHeartbeat(device)
 	} else {
 		fmt.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
 	}
@@ -44,6 +74,12 @@ func shutdown(mqttClient mqtt.Client) {
 // const mqttBroker string = "rpi.local:1883"
 const mqttBroker string = "localhost:1883"
 const mqttHeartbeatTopic string = "device/+/heartbeat"
+
+const heartbeatMetricNamespace = "Testing123" // TODO: "RPiMonitoring"
+const heartbeatMetricName = "DeviceHeartbeat"
+const heartbeatMetricDimension = "Device"
+
+var cwClient *cloudwatch.Client
 
 func main() {
 	log.SetPrefix("[heartbeats] ")
@@ -73,6 +109,15 @@ func main() {
 		<-caughtSignal
 		shutdownSignal <- true
 	}()
+
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	cfg.Region = "us-east-1"
+	cwClient = cloudwatch.NewFromConfig(cfg)
 
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		log.Panicln(token.Error())
