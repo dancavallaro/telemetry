@@ -7,13 +7,27 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 )
 
-var heartbeatHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("TOPIC: %s\n", msg.Topic())
-	fmt.Printf("MSG: %s\n", msg.Payload())
+var heartbeatTopicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
+
+func parseDevice(message string) string {
+	matches := heartbeatTopicRegex.FindStringSubmatch(message)
+	return matches[1]
+}
+
+func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
+	device := parseDevice(msg.Topic())
+
+	if string(msg.Payload()) == "OK" {
+		fmt.Printf("Received heartbeat for device %s\n", device)
+		// TODO: publish to CloudWatch (in a goroutine; don't block here)
+	} else {
+		fmt.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
+	}
 }
 
 func generateClientId() string {
