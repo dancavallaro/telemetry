@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+// TODO: refactor all this mess, break it up into separate packages/files
+
 var heartbeatTopicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
 
 func parseDevice(message string) string {
