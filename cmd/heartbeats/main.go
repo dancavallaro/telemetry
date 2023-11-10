@@ -19,22 +19,22 @@ import (
 
 // TODO: refactor all this mess, break it up into separate packages/files
 
-var heartbeatTopicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
+var topicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
 
 func parseDevice(message string) string {
-	matches := heartbeatTopicRegex.FindStringSubmatch(message)
+	matches := topicRegex.FindStringSubmatch(message)
 	return matches[1]
 }
 
 func publishHeartbeat(device string) {
 	_, err := cwClient.PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
-		Namespace: aws.String(heartbeatMetricNamespace),
+		Namespace: aws.String(metricNamespace),
 		MetricData: []types.MetricDatum{
 			{
-				MetricName: aws.String(heartbeatMetricName),
+				MetricName: aws.String(metricName),
 				Dimensions: []types.Dimension{
 					{
-						Name:  aws.String(heartbeatMetricDimension),
+						Name:  aws.String(metricDimension),
 						Value: &device,
 					},
 				},
@@ -63,9 +63,9 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 }
 
 func generateClientId() string {
-	currentTime := time.Now().Unix()
-	randomNum := rand.Intn(100)
-	return fmt.Sprintf("heartbeatmetrics-%v-%v", currentTime, randomNum)
+	now := time.Now().Unix()
+	random := rand.Intn(100)
+	return fmt.Sprintf("heartbeatmetrics-%v-%v", now, random)
 }
 
 func shutdown(mqttClient mqtt.Client) {
@@ -74,12 +74,12 @@ func shutdown(mqttClient mqtt.Client) {
 }
 
 // const mqttBroker string = "rpi.local:1883"
-const mqttBroker string = "localhost:1883"
-const mqttHeartbeatTopic string = "device/+/heartbeat"
+const brokerAddress string = "localhost:1883"
+const heartbeatTopic string = "device/+/heartbeat"
 
-const heartbeatMetricNamespace = "Testing123" // TODO: "RPiMonitoring"
-const heartbeatMetricName = "DeviceHeartbeat"
-const heartbeatMetricDimension = "Device"
+const metricNamespace = "Testing123" // TODO: "RPiMonitoring"
+const metricName = "DeviceHeartbeat"
+const metricDimension = "Device"
 
 var cwClient *cloudwatch.Client
 
@@ -93,7 +93,7 @@ func main() {
 	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
 
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(mqttBroker)
+	opts.AddBroker(brokerAddress)
 	opts.SetClientID(generateClientId())
 	// TODO: Get this out of source control
 	opts.SetUsername("rpi")
@@ -125,7 +125,7 @@ func main() {
 		log.Panicln(token.Error())
 	}
 
-	if token := mqttClient.Subscribe(mqttHeartbeatTopic, 0, heartbeatHandler); token.Wait() && token.Error() != nil {
+	if token := mqttClient.Subscribe(heartbeatTopic, 0, heartbeatHandler); token.Wait() && token.Error() != nil {
 		log.Fatalln(token.Error())
 	}
 
