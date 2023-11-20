@@ -77,8 +77,8 @@ func shutdown(mqttClient mqtt.Client) {
 const brokerAddress string = "localhost:1883"
 const heartbeatTopic string = "device/+/heartbeat"
 
-const metricNamespace = "Testing123" // TODO: "RPiMonitoring"
-const metricName = "DeviceHeartbeat"
+const metricNamespace = "RPiMonitoring"
+const metricName = "Heartbeat"
 const metricDimension = "Device"
 
 var cwClient *cloudwatch.Client
