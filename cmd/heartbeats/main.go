@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/smithy-go"
 	"github.com/eclipse/paho.mqtt.golang"
 	"log"
 	"math/rand"
@@ -26,7 +28,7 @@ func parseDevice(message string) string {
 	return matches[1]
 }
 
-func publishHeartbeat(device string) {
+func publishHeartbeat(device string) error {
 	_, err := cwClient.PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String(metricNamespace),
 		MetricData: []types.MetricDatum{
@@ -44,10 +46,11 @@ func publishHeartbeat(device string) {
 	})
 
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	fmt.Printf("Published heartbeat metric for device %s\n", device)
+	return nil
 }
 
 func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
@@ -55,8 +58,21 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 
 	if string(msg.Payload()) == "OK" {
 		fmt.Printf("Received heartbeat message for device %s\n", device)
-		// Publish metric to CloudWatch in a goroutine so we don't block MQTT client
-		go publishHeartbeat(device)
+
+		if err := publishHeartbeat(device); err != nil {
+			var ae smithy.APIError
+			if !errors.As(err, &ae) || ae.ErrorCode() != "ExpiredToken" {
+				log.Panic(err)
+			}
+
+			log.Println("IAM creds are expired, sleeping for 5 seconds then retrying")
+			time.Sleep(5 * time.Second)
+			cwClient = getCwClient()
+
+			if err := publishHeartbeat(device); err != nil {
+				log.Panic(err) // Just give up if the retry fails
+			}
+		}
 	} else {
 		fmt.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
 	}
@@ -71,6 +87,17 @@ func generateClientId() string {
 func shutdown(mqttClient mqtt.Client) {
 	log.Println("Shutting down now...")
 	mqttClient.Disconnect(1000)
+}
+
+func getCwClient() *cloudwatch.Client {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	cfg.Region = "us-east-1"
+	return cloudwatch.NewFromConfig(cfg)
 }
 
 // const mqttBroker string = "rpi.local:1883"
@@ -100,6 +127,7 @@ func main() {
 	opts.SetPassword("DHV6x48uBtYI83Ppu0tEWBmH")
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
+	opts.SetOrderMatters(false)
 
 	mqttClient := mqtt.NewClient(opts)
 	defer shutdown(mqttClient)
@@ -112,14 +140,7 @@ func main() {
 		shutdownSignal <- true
 	}()
 
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-
-	if err != nil {
-		log.Panic(err)
-	}
-
-	cfg.Region = "us-east-1"
-	cwClient = cloudwatch.NewFromConfig(cfg)
+	cwClient = getCwClient()
 
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		log.Panicln(token.Error())
