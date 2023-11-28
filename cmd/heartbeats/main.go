@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"dancavallaro.com/telemetry/awso"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/smithy-go"
@@ -29,7 +29,7 @@ func parseDevice(message string) string {
 }
 
 func publishHeartbeat(device string) error {
-	_, err := cwClient.PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
+	_, err := cw.Client().PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String(metricNamespace),
 		MetricData: []types.MetricDatum{
 			{
@@ -67,7 +67,8 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 
 			log.Println("IAM creds are expired, sleeping for 5 seconds then retrying")
 			time.Sleep(5 * time.Second)
-			cwClient = getCwClient()
+			// TODO: fix
+			//cwClient = getCwClient()
 
 			if err := publishHeartbeat(device); err != nil {
 				log.Panic(err) // Just give up if the retry fails
@@ -89,17 +90,6 @@ func shutdown(mqttClient mqtt.Client) {
 	mqttClient.Disconnect(1000)
 }
 
-func getCwClient() *cloudwatch.Client {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-
-	if err != nil {
-		log.Panic(err)
-	}
-
-	cfg.Region = "us-east-1"
-	return cloudwatch.NewFromConfig(cfg)
-}
-
 const brokerAddress string = "localhost:1883"
 const heartbeatTopic string = "device/+/heartbeat"
 
@@ -107,7 +97,9 @@ const metricNamespace = "RPiMonitoring"
 const metricName = "Heartbeat"
 const metricDimension = "Device"
 
-var cwClient *cloudwatch.Client
+var cw = awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
+	return cloudwatch.NewFromConfig(cfg)
+})
 
 func main() {
 	log.SetPrefix("[heartbeats] ")
@@ -138,8 +130,6 @@ func main() {
 		<-caughtSignal
 		shutdownSignal <- true
 	}()
-
-	cwClient = getCwClient()
 
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		log.Panicln(token.Error())
