@@ -100,7 +100,6 @@ func getCwClient() *cloudwatch.Client {
 	return cloudwatch.NewFromConfig(cfg)
 }
 
-// const mqttBroker string = "rpi.local:1883"
 const brokerAddress string = "localhost:1883"
 const heartbeatTopic string = "device/+/heartbeat"
 
