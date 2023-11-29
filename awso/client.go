@@ -19,7 +19,6 @@ func NewClientProvider[T any](buildClient func(cfg aws.Config) *T) ClientProvide
 }
 
 func (cp *ClientProvider[T]) Client() *T {
-	// TODO: test and make sure this is actually being invoked once and cached
 	if cp.client == nil {
 		cfg, err := config.LoadDefaultConfig(context.TODO()) // TODO: should accept context as parameter
 
