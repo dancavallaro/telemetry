@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/aws/smithy-go"
 	"github.com/eclipse/paho.mqtt.golang"
 	"log"
 	"math/rand"
@@ -60,15 +59,12 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 		fmt.Printf("Received heartbeat message for device %s\n", device)
 
 		if err := publishHeartbeat(device); err != nil {
-			var ae smithy.APIError
-			if !errors.As(err, &ae) || ae.ErrorCode() != "ExpiredToken" {
+			if !errors.Is(err, awso.ClientInvalidated) {
 				log.Panic(err)
 			}
 
 			log.Println("IAM creds are expired, sleeping for 5 seconds then retrying")
 			time.Sleep(5 * time.Second)
-			// TODO: fix
-			//cwClient = getCwClient()
 
 			if err := publishHeartbeat(device); err != nil {
 				log.Panic(err) // Just give up if the retry fails
@@ -97,7 +93,9 @@ const metricNamespace = "RPiMonitoring"
 const metricName = "Heartbeat"
 const metricDimension = "Device"
 
-var cw = awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
+var cw = awso.NewClientProvider(context.TODO(), func(cfg aws.Config) *cloudwatch.Client {
+	cfg.Region = "us-east-1"
+	log.Println("Creating new Cloudwatch client")
 	return cloudwatch.NewFromConfig(cfg)
 })
 

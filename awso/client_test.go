@@ -2,6 +2,7 @@ package awso
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssts "github.com/aws/aws-sdk-go-v2/service/sts"
@@ -16,7 +17,7 @@ func p(s string) *string {
 
 func TestClientCaching(t *testing.T) {
 	buildClientInvocations := 0
-	cp := NewClientProvider(func(cfg aws.Config) *string {
+	cp := NewClientProvider(context.TODO(), func(cfg aws.Config) *string {
 		buildClientInvocations++
 		return p("dummy client")
 	})
@@ -30,17 +31,23 @@ func TestClientCaching(t *testing.T) {
 }
 
 func TestCallsToSts(t *testing.T) {
-	sts := NewClientProvider(func(cfg aws.Config) *awssts.Client {
+	sts := NewClientProvider(context.TODO(), func(cfg aws.Config) *awssts.Client {
 		fmt.Println("constructing new client")
+		cfg.Region = "us-east-1"
 		return awssts.NewFromConfig(cfg)
 	})
 
 	for i := 0; i < 5; i++ {
 		resp, err := sts.Client().GetCallerIdentity(context.TODO(), nil)
 		if err != nil {
-			panic(err)
+			if errors.Is(err, ClientInvalidated) {
+				fmt.Println("Credentials expired! Client will be reloaded on next invocation")
+			} else {
+				fmt.Printf("Error: %v\n", err)
+			}
 		}
-		fmt.Println(*resp.Arn)
+		fmt.Println(resp)
+		//fmt.Println(*resp.Arn)
 		time.Sleep(1 * time.Second)
 	}
 }
