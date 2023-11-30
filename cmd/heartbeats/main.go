@@ -49,7 +49,7 @@ func publishHeartbeat(device string) error {
 		return err
 	}
 
-	fmt.Printf("Published heartbeat metric for device %s\n", device)
+	log.Printf("Published heartbeat metric for device %s\n", device)
 	return nil
 }
 
@@ -57,7 +57,7 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 	device := parseDevice(msg.Topic())
 
 	if string(msg.Payload()) == "OK" {
-		fmt.Printf("Received heartbeat message for device %s\n", device)
+		log.Printf("Received heartbeat message for device %s\n", device)
 
 		if err := publishHeartbeat(device); err != nil {
 			var ae smithy.APIError
@@ -74,7 +74,7 @@ func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
 			}
 		}
 	} else {
-		fmt.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
+		log.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
 	}
 }
 
@@ -110,7 +110,6 @@ const metricDimension = "Device"
 var cwClient *cloudwatch.Client
 
 func main() {
-	log.SetPrefix("[heartbeats] ")
 	log.SetFlags(0)
 
 	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
