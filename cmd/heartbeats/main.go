@@ -1,13 +1,12 @@
 package main
 
 import (
-	"context"
-	"dancavallaro.com/telemetry/awso"
-	"errors"
+	"dancavallaro.com/telemetry/pkg/awso"
+	"dancavallaro.com/telemetry/pkg/heartbeats"
+	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/eclipse/paho.mqtt.golang"
 	"log"
 	"math/rand"
@@ -27,51 +26,18 @@ func parseDevice(message string) string {
 	return matches[1]
 }
 
-func publishHeartbeat(device string) error {
-	_, err := cw.Client().PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
-		Namespace: aws.String(metricNamespace),
-		MetricData: []types.MetricDatum{
-			{
-				MetricName: aws.String(metricName),
-				Dimensions: []types.Dimension{
-					{
-						Name:  aws.String(metricDimension),
-						Value: &device,
-					},
-				},
-				Value: aws.Float64(1),
-			},
-		},
-	})
+func heartbeatHandler(publisher heartbeats.CloudwatchPublisher) func(_ mqtt.Client, msg mqtt.Message) {
+	return func(_ mqtt.Client, msg mqtt.Message) {
+		device := parseDevice(msg.Topic())
 
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Published heartbeat metric for device %s\n", device)
-	return nil
-}
-
-func heartbeatHandler(_ mqtt.Client, msg mqtt.Message) {
-	device := parseDevice(msg.Topic())
-
-	if string(msg.Payload()) == "OK" {
-		log.Printf("Received heartbeat message for device %s\n", device)
-
-		if err := publishHeartbeat(device); err != nil {
-			if !errors.Is(err, awso.ClientInvalidated) {
+		if string(msg.Payload()) == "OK" {
+			log.Printf("Received heartbeat message for device %s\n", device)
+			if err := publisher.PublishHeartbeat(device); err != nil {
 				log.Panic(err)
 			}
-
-			log.Println("IAM creds are expired, sleeping for 5 seconds then retrying")
-			time.Sleep(5 * time.Second)
-
-			if err := publishHeartbeat(device); err != nil {
-				log.Panic(err) // Just give up if the retry fails
-			}
+		} else {
+			log.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
 		}
-	} else {
-		log.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
 	}
 }
 
@@ -89,17 +55,16 @@ func shutdown(mqttClient mqtt.Client) {
 const brokerAddress string = "localhost:1883"
 const heartbeatTopic string = "device/+/heartbeat"
 
-const metricNamespace = "RPiMonitoring"
-const metricName = "Heartbeat"
-const metricDimension = "Device"
-
-var cw = awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
-	cfg.Region = "us-east-1"
-	log.Println("Creating new Cloudwatch client")
-	return cloudwatch.NewFromConfig(cfg)
-})
+var (
+	region          = flag.String("region", "us-east-1", "Cloudwatch region to use")
+	metricNamespace = flag.String("metricNamespace", "Testing", "Metric namespace to publish in")
+	metricName      = flag.String("metricName", "Heartbeat", "Metric name to use for heartbeats")
+	metricDimension = flag.String("metricDimension", "Device", "Dimension name to use for identifying devices")
+)
 
 func main() {
+	flag.Parse()
+
 	log.SetFlags(0)
 
 	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
@@ -132,7 +97,15 @@ func main() {
 		log.Panicln(token.Error())
 	}
 
-	if token := mqttClient.Subscribe(heartbeatTopic, 0, heartbeatHandler); token.Wait() && token.Error() != nil {
+	cw := awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
+		cfg.Region = *region
+		log.Println("Creating new Cloudwatch client")
+		return cloudwatch.NewFromConfig(cfg)
+	})
+	publisher := heartbeats.NewCloudwatchPublisher(&cw, *metricNamespace, *metricName, *metricDimension)
+	handler := heartbeatHandler(publisher)
+
+	if token := mqttClient.Subscribe(heartbeatTopic, 0, handler); token.Wait() && token.Error() != nil {
 		log.Fatalln(token.Error())
 	}
 
