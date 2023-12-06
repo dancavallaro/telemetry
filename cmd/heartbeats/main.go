@@ -4,98 +4,50 @@ import (
 	"dancavallaro.com/telemetry/pkg/awso"
 	"dancavallaro.com/telemetry/pkg/heartbeats"
 	"flag"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	"github.com/eclipse/paho.mqtt.golang"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
 	"syscall"
-	"time"
 )
 
-// TODO: refactor all this mess, break it up into separate packages/files
+const mqttTopic = "device/+/heartbeat"
 
-var topicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
+var mqttTopicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
 
-func parseDevice(message string) string {
-	matches := topicRegex.FindStringSubmatch(message)
-	return matches[1]
+type heartbeatHandler struct {
+	publisher heartbeats.CloudwatchPublisher
 }
 
-func heartbeatHandler(publisher heartbeats.CloudwatchPublisher) func(_ mqtt.Client, msg mqtt.Message) {
-	return func(_ mqtt.Client, msg mqtt.Message) {
-		device := parseDevice(msg.Topic())
-
-		if string(msg.Payload()) == "OK" {
-			log.Printf("Received heartbeat message for device %s\n", device)
-			if err := publisher.PublishHeartbeat(device); err != nil {
-				log.Panic(err)
-			}
-		} else {
-			log.Printf("Received invalid heartbeat message for device %s: %s\n", device, msg.Payload())
-		}
+func (handler heartbeatHandler) Heartbeat(topic string) {
+	device := mqttTopicRegex.FindStringSubmatch(topic)[1]
+	log.Printf("Received heartbeat message for device %s\n", device)
+	if err := handler.publisher.PublishHeartbeat(device); err != nil {
+		log.Panic(err)
 	}
 }
 
-func generateClientId() string {
-	now := time.Now().Unix()
-	random := rand.Intn(100)
-	return fmt.Sprintf("heartbeatmetrics-%v-%v", now, random)
+func (handler heartbeatHandler) Invalid(topic string, message string) {
+	log.Printf("Received invalid heartbeat message on topic '%s': %s\n", topic, message)
 }
-
-func shutdown(mqttClient mqtt.Client) {
-	log.Println("Shutting down now...")
-	mqttClient.Disconnect(1000)
-}
-
-const brokerAddress string = "localhost:1883"
-const heartbeatTopic string = "device/+/heartbeat"
 
 var (
 	region          = flag.String("region", "us-east-1", "Cloudwatch region to use")
 	metricNamespace = flag.String("metricNamespace", "Testing", "Metric namespace to publish in")
 	metricName      = flag.String("metricName", "Heartbeat", "Metric name to use for heartbeats")
 	metricDimension = flag.String("metricDimension", "Device", "Dimension name to use for identifying devices")
+	mqttAddress     = flag.String("mqttAddress", "localhost:1883", "Address:port of MQTT broker")
+	mqttUsername    = flag.String("mqttUsername", "<none>", "MQTT username")
+	mqttPassword    = flag.String("mqttPassword", "<none>", "MQTT password")
 )
 
 func main() {
 	flag.Parse()
 
 	log.SetFlags(0)
-
-	mqtt.ERROR = log.New(os.Stdout, "[ERROR] ", 0)
-	mqtt.CRITICAL = log.New(os.Stdout, "[CRIT] ", 0)
-	mqtt.WARN = log.New(os.Stdout, "[WARN]  ", 0)
-	//mqtt.DEBUG = log.New(os.Stdout, "[DEBUG] ", 0)
-
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(brokerAddress)
-	opts.SetClientID(generateClientId())
-	// TODO: Get this out of source control
-	opts.SetUsername("rpi")
-	opts.SetPassword("DHV6x48uBtYI83Ppu0tEWBmH")
-	opts.SetKeepAlive(2 * time.Second)
-	opts.SetPingTimeout(1 * time.Second)
-	opts.SetOrderMatters(false)
-
-	mqttClient := mqtt.NewClient(opts)
-	defer shutdown(mqttClient)
-
-	caughtSignal := make(chan os.Signal, 1)
-	shutdownSignal := make(chan bool, 1)
-	signal.Notify(caughtSignal, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-caughtSignal
-		shutdownSignal <- true
-	}()
-
-	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
-		log.Panicln(token.Error())
-	}
+	log.SetPrefix("[heartbeats] ")
 
 	cw := awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
 		cfg.Region = *region
@@ -103,11 +55,26 @@ func main() {
 		return cloudwatch.NewFromConfig(cfg)
 	})
 	publisher := heartbeats.NewCloudwatchPublisher(&cw, *metricNamespace, *metricName, *metricDimension)
-	handler := heartbeatHandler(publisher)
 
-	if token := mqttClient.Subscribe(heartbeatTopic, 0, handler); token.Wait() && token.Error() != nil {
-		log.Fatalln(token.Error())
+	listener, err := heartbeats.NewMQTTListener(heartbeats.MQTTListenerConfig{
+		BrokerAddress: *mqttAddress,
+		Username:      *mqttUsername,
+		Password:      *mqttPassword,
+		Logger:        log.New(os.Stdout, "[mqtt] ", 0),
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+	defer func() {
+		log.Println("Shutting down MQTT listener now...")
+		listener.Close()
+	}()
+	if err := listener.RegisterHandler(mqttTopic, heartbeatHandler{publisher}); err != nil {
+		log.Panic(err)
 	}
 
-	<-shutdownSignal
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
+
+	<-done
 }
