@@ -25,13 +25,13 @@ func NewClientProvider[T any](buildClient func(cfg aws.Config) *T) ClientProvide
 
 var ClientInvalidated = errors.New("client invalidated")
 
-type DeserializeMiddlewareFunc func(
+type deserializeMiddlewareFunc func(
 	context.Context, middleware.DeserializeInput, middleware.DeserializeHandler,
 ) (
 	middleware.DeserializeOutput, middleware.Metadata, error,
 )
 
-func clientInvalidatorMiddleware[T any](cp *ClientProvider[T]) DeserializeMiddlewareFunc {
+func clientInvalidatorMiddleware[T any](cp *ClientProvider[T]) deserializeMiddlewareFunc {
 	return func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
@@ -54,12 +54,20 @@ func clientInvalidatorMiddleware[T any](cp *ClientProvider[T]) DeserializeMiddle
 }
 
 func (cp *ClientProvider[T]) Client() *T {
+	client, err := cp.ClientSafe()
+	if err != nil {
+		// Not great to panic here, but awkward for the caller to have to handle an
+		// error return value when using this method.
+		panic(err)
+	}
+	return client
+}
+
+func (cp *ClientProvider[T]) ClientSafe() (*T, error) {
 	if cp.client == nil {
 		cfg, err := config.LoadDefaultConfig(cp.Context)
 		if err != nil {
-			// Not great to panic here, but awkward for the caller to have to handle an
-			// error return value when using this method.
-			panic(err)
+			return nil, err
 		}
 
 		cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
@@ -69,5 +77,5 @@ func (cp *ClientProvider[T]) Client() *T {
 
 		cp.client = cp.buildClient(cfg)
 	}
-	return cp.client
+	return cp.client, nil
 }
