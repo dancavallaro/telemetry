@@ -8,7 +8,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=pi
-ExecStart=/usr/local/bin/heartbeats
+ExecStart=/usr/local/bin/heartbeats -region us-east-1 -mqttUsername rpi -mqttPassword DHV6x48uBtYI83Ppu0tEWBmH -metricNamespace RPiMonitoring
 
 [Install]
 WantedBy=multi-user.target
