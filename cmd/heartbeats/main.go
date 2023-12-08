@@ -33,6 +33,17 @@ func (handler heartbeatHandler) Invalid(topic string, message string) {
 	log.Printf("Received invalid heartbeat message on topic '%s': %s\n", topic, message)
 }
 
+func printConfigSummary() {
+	log.Println("============= Configuration =============")
+	log.Printf("MQTT broker address: %s\n", *mqttAddress)
+	log.Printf("MQTT broker username: %s\n", *mqttUsername)
+	log.Printf("AWS region: %s\n", *region)
+	log.Printf("Cloudwatch namespace: %s\n", *metricNamespace)
+	log.Printf("Cloudwatch metric name: %s\n", *metricName)
+	log.Printf("Cloudwatch metric dimension: %s\n", *metricDimension)
+	log.Println("=========================================")
+}
+
 var (
 	region          = flag.String("region", "us-east-1", "Cloudwatch region to use")
 	metricNamespace = flag.String("metricNamespace", "Testing", "Metric namespace to publish in")
@@ -44,10 +55,11 @@ var (
 )
 
 func main() {
-	flag.Parse()
-
 	log.SetFlags(0)
 	log.SetPrefix("[heartbeats] ")
+
+	flag.Parse()
+	printConfigSummary()
 
 	cw := awso.NewClientProvider(func(cfg aws.Config) *cloudwatch.Client {
 		cfg.Region = *region
@@ -56,6 +68,7 @@ func main() {
 	})
 	publisher := heartbeats.NewCloudwatchPublisher(&cw, *metricNamespace, *metricName, *metricDimension)
 
+	log.Printf("Creating MQTT listener for topic '%s'\n", mqttTopic)
 	listener, err := heartbeats.NewMQTTListener(heartbeats.MQTTListenerConfig{
 		BrokerAddress: *mqttAddress,
 		Username:      *mqttUsername,
@@ -76,5 +89,6 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 
+	log.Println("Listening for heartbeats...")
 	<-done
 }
