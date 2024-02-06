@@ -3,6 +3,7 @@ package heartbeats
 import (
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
+	"log"
 	"math/rand"
 	"time"
 )
@@ -33,6 +34,12 @@ func NewMQTTListener(cfg MQTTListenerConfig) (*MQTTListener, error) {
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 	opts.SetOrderMatters(false)
+	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
+		log.Printf("Lost connection with MQTT broker: %v\n", err)
+		log.Println("Sleeping for 10 seconds then panicing...")
+		time.Sleep(10 * time.Second)
+		panic("lost connection with MQTT broker!")
+	})
 
 	if cfg.Logger != nil {
 		mqtt.ERROR = cfg.Logger
