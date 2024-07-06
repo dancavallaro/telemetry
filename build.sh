@@ -3,5 +3,6 @@ set -euo pipefail
 
 go test ./...
 
-go build -o heartbeats cmd/heartbeats/main.go
-go build -o serial_logger cmd/serial_logger/main.go
+docker build -t serial_logger:latest docker/serial_logger
+docker tag serial_logger:latest ghcr.io/dancavallaro/telemetry/serial_logger:latest
+docker push ghcr.io/dancavallaro/telemetry/serial_logger:latest
