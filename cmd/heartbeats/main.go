@@ -1,11 +1,11 @@
 package main
 
 import (
-	"dancavallaro.com/telemetry/pkg/awso"
-	"dancavallaro.com/telemetry/pkg/heartbeats"
 	"flag"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/dancavallaro/telemetry/pkg/awso"
+	"github.com/dancavallaro/telemetry/pkg/heartbeats"
 	"log"
 	"os"
 	"os/signal"

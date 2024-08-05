@@ -2,11 +2,11 @@ package heartbeats
 
 import (
 	"context"
-	"dancavallaro.com/telemetry/pkg/awso"
 	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/dancavallaro/telemetry/pkg/awso"
 	"log"
 	"time"
 )

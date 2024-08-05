@@ -1,4 +1,4 @@
-module dancavallaro.com/telemetry
+module github.com/dancavallaro/telemetry
 
 go 1.22.0
 
