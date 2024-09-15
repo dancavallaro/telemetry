@@ -1,7 +1,10 @@
 FROM golang:1.22.5-bookworm as base
 
 WORKDIR /
-RUN git clone https://github.com/dancavallaro/telemetry.git
+RUN mkdir -p telemetry/cmd && mkdir -p telemetry/pkg
+ADD go.mod go.sum telemetry/
+ADD cmd telemetry/cmd
+ADD pkg telemetry/pkg
 RUN cd telemetry && \
     go build -o serial_logger cmd/serial_logger/main.go && \
     go build -o heartbeats cmd/heartbeats/main.go
