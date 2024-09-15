@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"github.com/albenik/go-serial/v2"
 	"log"
@@ -22,16 +23,14 @@ func openDevice(device string, baud int) *serial.Port {
 }
 
 func readAndPrint(port *serial.Port) {
-	buff := make([]byte, 100)
+	reader := bufio.NewReader(port)
 	for {
-		n, err := port.Read(buff)
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			panic(err)
+			log.Printf("[ERROR] Error reading from serial port: %v\n", err)
+			continue
 		}
-		line := string(buff[:n])
-		if line != "" {
-			log.Printf("%v", line)
-		}
+		log.Print(line)
 	}
 }
 
