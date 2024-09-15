@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/albenik/go-serial/v2"
+	"log"
 )
 
 const Required = "<REQUIRED>"
@@ -28,7 +28,10 @@ func readAndPrint(port *serial.Port) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("%v", string(buff[:n]))
+		line := string(buff[:n])
+		if line != "" {
+			log.Printf("%v", line)
+		}
 	}
 }
 
