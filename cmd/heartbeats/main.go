@@ -66,7 +66,7 @@ var (
 )
 
 func main() {
-	log.SetFlags(0)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmsgprefix)
 	log.SetPrefix("[heartbeats] ")
 
 	flag.Parse()
@@ -83,11 +83,12 @@ func main() {
 	}
 
 	log.Printf("Creating MQTT listener for topic '%s'\n", mqttTopic)
+	mqttLogger := log.New(log.Default().Writer(), "[mqtt]", log.Default().Flags())
 	listener, err := heartbeats.NewMQTTListener(heartbeats.MQTTListenerConfig{
 		BrokerAddress: *mqttAddress,
 		Username:      *mqttUsername,
 		Password:      *mqttPassword,
-		Logger:        log.New(os.Stdout, "[mqtt] ", 0),
+		Logger:        mqttLogger,
 	})
 	if err != nil {
 		log.Panic(err)
