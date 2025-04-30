@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VERSION=v0.1.3
+
 go test ./...
 
-docker build --target serial_logger -t serial_logger:latest .
-docker tag serial_logger:latest ghcr.io/dancavallaro/telemetry/serial_logger:latest
-docker push ghcr.io/dancavallaro/telemetry/serial_logger:latest
+docker buildx build --push --platform linux/amd64 --target serial_logger -t ghcr.io/dancavallaro/telemetry/serial_logger:$VERSION .
 
-docker build --target heartbeats -t heartbeats:latest .
-docker tag heartbeats:latest ghcr.io/dancavallaro/telemetry/heartbeats:latest
-docker push ghcr.io/dancavallaro/telemetry/heartbeats:latest
+docker buildx build --push --platform linux/amd64 --target heartbeats -t ghcr.io/dancavallaro/telemetry/heartbeats:$VERSION .
