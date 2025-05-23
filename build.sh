@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=v0.1.3
-
 go test ./...
 
-docker buildx build --push --platform linux/amd64 --target serial_logger -t ghcr.io/dancavallaro/telemetry/serial_logger:$VERSION .
-
-docker buildx build --push --platform linux/amd64 --target heartbeats -t ghcr.io/dancavallaro/telemetry/heartbeats:$VERSION .
+for app in heartbeats serial-logger volsync-metrics; do
+  env KO_DOCKER_REPO=ghcr.io/dancavallaro/telemetry ko build \
+    --platform linux/amd64,linux/arm64 \
+    --tags latest,"$(cat ./cmd/$app/version)" \
+    --base-import-paths \
+    ./cmd/$app
+done
