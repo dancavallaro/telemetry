@@ -29,7 +29,11 @@ func NewCloudwatchPublisher(
 }
 
 func (pub CloudwatchPublisher) PublishHeartbeat(device string) error {
-	if err := pub.publishHeartbeat(device); err != nil {
+	return pub.PublishValue(device, 1)
+}
+
+func (pub CloudwatchPublisher) PublishValue(device string, value float64) error {
+	if err := pub.publishValue(device, value); err != nil {
 		if !errors.Is(err, awso.ClientInvalidated) {
 			return err
 		}
@@ -37,14 +41,14 @@ func (pub CloudwatchPublisher) PublishHeartbeat(device string) error {
 		log.Println("IAM creds are expired, sleeping for 5 seconds then retrying")
 		time.Sleep(5 * time.Second)
 
-		if err := pub.publishHeartbeat(device); err != nil {
+		if err := pub.publishValue(device, value); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (pub CloudwatchPublisher) publishHeartbeat(device string) error {
+func (pub CloudwatchPublisher) publishValue(device string, value float64) error {
 	_, err := pub.cw.Client().PutMetricData(context.TODO(), &cloudwatch.PutMetricDataInput{
 		Namespace: aws.String(pub.metricNamespace),
 		MetricData: []types.MetricDatum{
@@ -56,7 +60,7 @@ func (pub CloudwatchPublisher) publishHeartbeat(device string) error {
 						Value: &device,
 					},
 				},
-				Value: aws.Float64(1),
+				Value: aws.Float64(value),
 			},
 		},
 	})
