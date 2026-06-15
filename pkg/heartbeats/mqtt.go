@@ -58,19 +58,13 @@ func NewMQTTListener(cfg MQTTListenerConfig) (*MQTTListener, error) {
 	return &MQTTListener{client}, nil
 }
 
-type MQTTMessageHandler interface {
-	Heartbeat(topic string)
-	Invalid(topic string, message string)
-}
+// MessageHandler is invoked for each message received on a subscribed topic,
+// with the concrete topic the message arrived on and its (string) payload.
+type MessageHandler func(topic string, payload string)
 
-func (lis MQTTListener) RegisterHandler(topic string, handler MQTTMessageHandler) error {
+func (lis MQTTListener) RegisterHandler(topic string, handler MessageHandler) error {
 	token := lis.client.Subscribe(topic, 0, func(_ mqtt.Client, msg mqtt.Message) {
-		message := string(msg.Payload())
-		if message == "OK" {
-			handler.Heartbeat(msg.Topic())
-		} else {
-			handler.Invalid(msg.Topic(), message)
-		}
+		handler(msg.Topic(), string(msg.Payload()))
 	})
 	token.Wait()
 	return token.Error()
