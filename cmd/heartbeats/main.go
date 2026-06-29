@@ -22,11 +22,13 @@ const (
 
 	heartbeatTopic = "device/+/heartbeat"
 	telemetryTopic = "device/+/telemetry/+"
+	versionTopic   = "device/+/version"
 )
 
 var (
 	heartbeatTopicRegex = regexp.MustCompile(`device/(.+)/heartbeat`)
 	telemetryTopicRegex = regexp.MustCompile(`device/(.+)/telemetry/(.+)`)
+	versionTopicRegex   = regexp.MustCompile(`device/(.+)/version`)
 	// Prometheus metric names may only contain [a-zA-Z0-9_:].
 	invalidMetricNameChars = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
@@ -38,6 +40,11 @@ var (
 		"iot_device_last_heartbeat_time",
 		"Time of the last heartbeat received from the device",
 		[]string{"device"}, nil,
+	)
+	firmwareInfoDesc = prometheus.NewDesc(
+		"iot_device_firmware_info",
+		"Firmware version reported by the device (value is always 1; see the 'version' label)",
+		[]string{"device", "version"}, nil,
 	)
 )
 
@@ -160,6 +167,58 @@ func telemetryMetricName(metric string) string {
 	return "iot_device_" + invalidMetricNameChars.ReplaceAllString(metric, "_")
 }
 
+type versionHandler struct {
+	versions *sync.Map // device(string) -> version(string)
+}
+
+func newVersionHandler() versionHandler {
+	return versionHandler{
+		versions: &sync.Map{},
+	}
+}
+
+func (handler versionHandler) handle(topic string, message string) {
+	match := versionTopicRegex.FindStringSubmatch(topic)
+	if match == nil {
+		log.Printf("Received version message on unparseable topic '%s'\n", topic)
+		return
+	}
+	device := match[1]
+
+	if message == "" {
+		// A cleared (empty) retained payload means the device was decommissioned; forget it.
+		log.Printf("Cleared firmware version for device %s\n", device)
+		handler.versions.Delete(device)
+		return
+	}
+
+	log.Printf("Received firmware version %s for device %s\n", message, device)
+	handler.versions.Store(device, message)
+}
+
+// versionCollector exports the firmware version each device reported, as an info-style
+// gauge (value always 1; the version is carried as a label). Unlike the heartbeat and
+// telemetry collectors it has no TTL: the version is published once per MQTT connection
+// (retained), not on a periodic cadence, so entries persist until the daemon restarts
+// (re-reading the broker's retained state) or an empty retained payload clears them.
+type versionCollector struct {
+	versions *sync.Map
+}
+
+func (c versionCollector) Describe(descs chan<- *prometheus.Desc) {
+	prometheus.DescribeByCollect(c, descs)
+}
+
+func (c versionCollector) Collect(metrics chan<- prometheus.Metric) {
+	c.versions.Range(func(key, value any) bool {
+		device := key.(string)
+		version := value.(string)
+		metrics <- prometheus.MustNewConstMetric(
+			firmwareInfoDesc, prometheus.GaugeValue, 1, device, version)
+		return true
+	})
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmsgprefix)
 	log.SetPrefix("[heartbeats] ")
@@ -193,8 +252,15 @@ func main() {
 		log.Panic(err)
 	}
 
+	verHandler := newVersionHandler()
+	log.Printf("Subscribing to version topic '%s'\n", versionTopic)
+	if err := listener.RegisterHandler(versionTopic, verHandler.handle); err != nil {
+		log.Panic(err)
+	}
+
 	prometheus.MustRegister(&heartbeatCollector{hbHandler.lastHeartbeats})
 	prometheus.MustRegister(&telemetryCollector{telHandler.samples})
+	prometheus.MustRegister(&versionCollector{verHandler.versions})
 
 	log.Println("Starting metrics server at :8080/metrics")
 	http.Handle("/metrics", promhttp.Handler())
