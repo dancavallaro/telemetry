@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+// Subset of Defakto's agent/alpha/serverlessapi/api.proto covering only the
+// FetchX509SVID path; transcribed from the live server's gRPC reflection.
+package com.spirl.serverless.alpha;
+
+option go_package = "github.com/dancavallaro/telemetry/pkg/spirlweb/serverlessapi";
+
+service SpiffeWorkloadAPI {
+  rpc FetchX509SVID(FetchX509SVIDRequest) returns (FetchX509SVIDResponse);
+}
+
+message FetchX509SVIDRequest {
+  repeated MethodAttestation attestations = 1;
+  string cluster_id = 2;
+}
+
+message MethodAttestation {
+  string method_type = 1;
+  string method_version = 2;
+  bytes evidence = 3;
+}
+
+message FetchX509SVIDResponse {
+  X509SVIDResult x509_svids = 1;
+}
+
+message X509SVIDResult {
+  repeated X509SVID svids = 1;
+  map<string, bytes> federated_bundles = 2;
+}
+
+message X509SVID {
+  string spiffe_id = 1;
+  bytes x509_svid = 2;
+  bytes x509_svid_key = 3;
+  bytes bundle = 4;
+  string hint = 5;
+}
