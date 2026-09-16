@@ -78,6 +78,9 @@ func loadEnrollment(path string) (map[string]espattest.Device, error) {
 
 	devices := make(map[string]espattest.Device, len(entries))
 	for deviceID, entry := range entries {
+		if err := espattest.ValidDeviceID(deviceID); err != nil {
+			return nil, err
+		}
 		secret, err := base64.StdEncoding.DecodeString(entry.Secret)
 		if err != nil {
 			return nil, fmt.Errorf("decoding secret for %s: %w", deviceID, err)

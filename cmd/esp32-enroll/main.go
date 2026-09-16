@@ -61,6 +61,9 @@ func main() {
 }
 
 func runGenerate(deviceID string) error {
+	if err := espattest.ValidDeviceID(deviceID); err != nil {
+		return err
+	}
 	secret, err := generateSecret()
 	if err != nil {
 		return err
@@ -72,7 +75,7 @@ func runGenerate(deviceID string) error {
 
 	fmt.Printf("device_id: %s\nsecret:    %s\n\n", deviceID, secret)
 	fmt.Printf("--- enrollment entry (merge into the /talos-prod/esp32-enrollment parameter) ---\n%s\n\n", entry)
-	fmt.Printf("--- nvs.csv (flash to the device) ---\n%s\n", nvsCSV(secret))
+	fmt.Printf("--- nvs.csv (flash to the device) ---\n%s\n", nvsCSV(deviceID, secret))
 	return nil
 }
 
@@ -83,6 +86,9 @@ func runAttest(endpoint, deviceID, secretB64 string) error {
 	}
 	if len(secret) != secretBytes {
 		return fmt.Errorf("secret is %d bytes, want %d", len(secret), secretBytes)
+	}
+	if err := espattest.ValidDeviceID(deviceID); err != nil {
+		return err
 	}
 
 	nonce, err := espattest.NewNonce()
@@ -164,9 +170,12 @@ func enrollmentJSON(deviceID, secret string) (string, error) {
 	return string(body), nil
 }
 
-func nvsCSV(secret string) string {
+// The device reads both keys from NVS, so its ID is provisioned rather than
+// derived from the chip.
+func nvsCSV(deviceID, secret string) string {
 	return "key,type,encoding,value\n" +
 		"spiffe,namespace,,\n" +
+		fmt.Sprintf("device_id,data,string,%s\n", deviceID) +
 		fmt.Sprintf("device_secret,data,base64,%s\n", secret)
 }
 

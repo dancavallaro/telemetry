@@ -2,6 +2,7 @@ package espattest
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -92,4 +93,34 @@ func TestNewNonceIsSixteenHexCharsAndUnique(t *testing.T) {
 	assert.Len(t, a, 16)
 	assert.NotEqual(t, a, b)
 	assert.Regexp(t, "^[0-9a-f]{16}$", a)
+}
+
+func TestValidDeviceIDAcceptsNames(t *testing.T) {
+	for _, id := range []string{"starlord", "pennyskitchen", "hatch", "lcd-stick-esp32", "a1b2c3d4e5f6", "esp32_01", "v1.2"} {
+		assert.NoError(t, ValidDeviceID(id), id)
+	}
+}
+
+// The signing string joins fields with "|", and a device ID containing one would
+// make it ambiguous. The rest of the charset is what SPIFFE allows in a path
+// segment, since the ID becomes one.
+func TestValidDeviceIDRejectsUnsafeNames(t *testing.T) {
+	tests := map[string]string{
+		"empty":     "",
+		"pipe":      "star|lord",
+		"space":     "star lord",
+		"uppercase": "Starlord",
+		"slash":     "star/lord",
+		"dot":       ".",
+		"dotdot":    "..",
+		"non-ascii": "starlörd",
+		"too long":  strings.Repeat("a", 65),
+		"colon":     "star:lord",
+		"percent":   "star%lord",
+	}
+	for name, id := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Error(t, ValidDeviceID(id))
+		})
+	}
 }

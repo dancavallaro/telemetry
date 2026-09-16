@@ -123,3 +123,15 @@ func TestMuxRoutesAttestAndHealthz(t *testing.T) {
 	defer wrongMethod.Body.Close()
 	assert.Equal(t, http.StatusMethodNotAllowed, wrongMethod.StatusCode)
 }
+
+// A typo in the enrollment parameter should fail at startup, not produce a
+// device that can never attest or a malformed SPIFFE ID.
+func TestLoadEnrollmentRejectsInvalidDeviceID(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	path := writeEnrollment(t, `{"star|lord":{"secret":"`+secret+`"}}`)
+
+	_, err := loadEnrollment(path)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "star|lord")
+}

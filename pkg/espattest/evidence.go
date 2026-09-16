@@ -11,10 +11,17 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"regexp"
 	"strconv"
 )
 
 const nonceBytes = 8
+
+const maxDeviceIDLen = 64
+
+var deviceIDPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // Evidence is the proof a device presents; it travels as the attestation's
 // evidence bytes and arrives at the webhook as JSON.
@@ -54,8 +61,26 @@ func NewNonce() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// DeviceID and Nonce are hex, so "|" cannot appear in either and the joined
-// string is unambiguous.
+// ValidDeviceID rejects anything "|" could make ambiguous in the signing string,
+// and anything SPIFFE would reject in the path segment the ID becomes.
+func ValidDeviceID(id string) error {
+	if id == "" {
+		return errors.New("device ID is empty")
+	}
+	if len(id) > maxDeviceIDLen {
+		return fmt.Errorf("device ID is %d characters, want at most %d", len(id), maxDeviceIDLen)
+	}
+	if id == "." || id == ".." {
+		return fmt.Errorf("device ID %q is reserved", id)
+	}
+	if !deviceIDPattern.MatchString(id) {
+		return fmt.Errorf("device ID %q may contain only lowercase letters, digits, and .-_", id)
+	}
+	return nil
+}
+
+// ValidDeviceID guarantees "|" cannot appear in a device ID, and nonces are hex,
+// so the joined string is unambiguous.
 func signingString(deviceID string, ts int64, nonce string) string {
 	return deviceID + "|" + strconv.FormatInt(ts, 10) + "|" + nonce
 }
