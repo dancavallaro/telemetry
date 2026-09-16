@@ -84,7 +84,7 @@ func runGenerate(deviceID string) error {
 
 	fmt.Printf("device_id: %s\nsecret:    %s\n\n", deviceID, secret)
 	fmt.Printf("--- enrollment entry (merge into the /talos-prod/esp32-enrollment parameter) ---\n%s\n\n", entry)
-	fmt.Printf("--- nvs.csv (flash to the device) ---\n%s\n", nvsCSV(deviceID, secret))
+	fmt.Printf("--- nvs.csv (flash to the device) ---\n%s\n", nvsCSV(secret))
 	return nil
 }
 
@@ -230,12 +230,10 @@ func enrollmentJSON(deviceID, secret string) (string, error) {
 	return string(body), nil
 }
 
-// The device reads both keys from NVS, so its ID is provisioned rather than
-// derived from the chip.
-func nvsCSV(deviceID, secret string) string {
+// Only the secret goes to NVS; the firmware takes its ID from DEVICE_NAME.
+func nvsCSV(secret string) string {
 	return "key,type,encoding,value\n" +
 		"spiffe,namespace,,\n" +
-		fmt.Sprintf("device_id,data,string,%s\n", deviceID) +
 		fmt.Sprintf("device_secret,data,base64,%s\n", secret)
 }
 

@@ -90,15 +90,15 @@ func keysOf(m map[string]string) []string {
 	return keys
 }
 
-func TestNVSCSVCarriesTheDeviceID(t *testing.T) {
-	csv := nvsCSV("starlord", "c2VjcmV0")
+// The firmware takes its ID from DEVICE_NAME, so NVS carries only the secret.
+func TestNVSCSVCarriesOnlyTheSecret(t *testing.T) {
+	csv := nvsCSV("c2VjcmV0")
 
 	lines := strings.Split(strings.TrimSpace(csv), "\n")
-	require.Len(t, lines, 4)
+	require.Len(t, lines, 3)
 	assert.Equal(t, "key,type,encoding,value", lines[0])
 	assert.Equal(t, "spiffe,namespace,,", lines[1])
-	assert.Equal(t, "device_id,data,string,starlord", lines[2])
-	assert.Equal(t, "device_secret,data,base64,c2VjcmV0", lines[3])
+	assert.Equal(t, "device_secret,data,base64,c2VjcmV0", lines[2])
 }
 
 func TestGenerateRejectsInvalidDeviceID(t *testing.T) {
