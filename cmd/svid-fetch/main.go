@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dancavallaro/telemetry/pkg/spirlweb"
@@ -21,28 +23,28 @@ import (
 const fetchX509SVIDMethod = "com.spirl.serverless.alpha.SpiffeWorkloadAPI/FetchX509SVID"
 
 var (
-	endpoint  = flag.String("endpoint", "https://defakto.o.cavnet.cloud", "Base URL of the serverless SPIFFE API")
-	deviceID  = flag.String("deviceId", "testdev01", "Device ID to claim in the evidence")
-	evidence  = flag.String("evidence", "", "Raw evidence to send; defaults to a JSON object built from -deviceId")
-	clusterID = flag.String("clusterId", "", "Cluster ID to send in the request")
-	outDir    = flag.String("outDir", "", "If set, write svid.pem, key.pem and bundle.pem to this directory")
-	timeout   = flag.Duration("timeout", 30*time.Second, "Overall request timeout")
+	endpoint    = flag.String("endpoint", "https://defakto.o.cavnet.cloud", "Base URL of the serverless SPIFFE API")
+	deviceID    = flag.String("deviceId", "testdev01", "Device ID to claim in the evidence")
+	evidence    = flag.String("evidence", "", "Raw evidence to send; defaults to a JSON object built from -deviceId")
+	evidenceHex = flag.String("evidenceHex", "", "Evidence as hex, for probing how binary evidence survives the wire; overrides -evidence")
+	clusterID   = flag.String("clusterId", "", "Cluster ID to send in the request")
+	outDir      = flag.String("outDir", "", "If set, write svid.pem, key.pem and bundle.pem to this directory")
+	timeout     = flag.Duration("timeout", 30*time.Second, "Overall request timeout")
 )
 
 func main() {
 	flag.Parse()
 
-	body := *evidence
-	if body == "" {
-		body = fmt.Sprintf(`{"device_id":%q}`, *deviceID)
+	body, err := buildEvidence()
+	if err != nil {
+		log.Fatal(err)
 	}
-	log.Printf("sending evidence: %s", body)
 
 	req := &pb.FetchX509SVIDRequest{
 		Attestations: []*pb.MethodAttestation{{
 			MethodType:    "extension",
 			MethodVersion: "1.0",
-			Evidence:      []byte(body),
+			Evidence:      body,
 		}},
 		ClusterId: *clusterID,
 	}
@@ -68,6 +70,25 @@ func main() {
 		}
 		log.Printf("wrote svid.pem, key.pem and bundle.pem to %s", *outDir)
 	}
+}
+
+// buildEvidence also logs what it built, since binary evidence must not be
+// printed raw to a terminal.
+func buildEvidence() ([]byte, error) {
+	if *evidenceHex != "" {
+		body, err := hex.DecodeString(strings.TrimSpace(*evidenceHex))
+		if err != nil {
+			return nil, fmt.Errorf("decoding -evidenceHex: %w", err)
+		}
+		log.Printf("sending evidence: %d bytes, hex %s", len(body), hex.EncodeToString(body))
+		return body, nil
+	}
+	body := *evidence
+	if body == "" {
+		body = fmt.Sprintf(`{"device_id":%q}`, *deviceID)
+	}
+	log.Printf("sending evidence: %s", body)
+	return []byte(body), nil
 }
 
 func printSVID(i int, svid *pb.X509SVID) {
