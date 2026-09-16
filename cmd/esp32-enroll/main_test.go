@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 
@@ -31,18 +32,15 @@ func TestEnrollmentJSONMatchesTheWebhookFormat(t *testing.T) {
 	secret, err := generateSecret()
 	require.NoError(t, err)
 
-	body, err := enrollmentJSON("a1b2c3d4e5f6", "nodemcu-32s", secret)
+	body, err := enrollmentJSON("a1b2c3d4e5f6", secret)
 	require.NoError(t, err)
 
-	var parsed map[string]struct {
-		Secret string `json:"secret"`
-		Model  string `json:"model"`
-	}
+	var parsed map[string]map[string]string
 	require.NoError(t, json.Unmarshal([]byte(body), &parsed))
 
 	require.Contains(t, parsed, "a1b2c3d4e5f6")
-	assert.Equal(t, "nodemcu-32s", parsed["a1b2c3d4e5f6"].Model)
-	raw, err := base64.StdEncoding.DecodeString(parsed["a1b2c3d4e5f6"].Secret)
+	assert.Equal(t, []string{"secret"}, keysOf(parsed["a1b2c3d4e5f6"]))
+	raw, err := base64.StdEncoding.DecodeString(parsed["a1b2c3d4e5f6"]["secret"])
 	require.NoError(t, err)
 	assert.Len(t, raw, 32)
 }
@@ -87,4 +85,13 @@ func TestNormalizeEndpointAddsHTTPS(t *testing.T) {
 	assert.Equal(t, "https://defakto.o.cavnet.cloud", normalizeEndpoint("defakto.o.cavnet.cloud"))
 	assert.Equal(t, "https://defakto.o.cavnet.cloud", normalizeEndpoint("https://defakto.o.cavnet.cloud"))
 	assert.Equal(t, "https://defakto.o.cavnet.cloud", normalizeEndpoint("https://defakto.o.cavnet.cloud/"))
+}
+
+func keysOf(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

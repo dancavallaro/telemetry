@@ -21,7 +21,7 @@ func newTestVerifier(t *testing.T) *Verifier {
 	t.Helper()
 	return &Verifier{
 		Devices: map[string]Device{
-			testDeviceID: {Secret: testSecret, Model: "nodemcu-32s"},
+			testDeviceID: {Secret: testSecret},
 		},
 		Skew: 60 * time.Second,
 		Now:  func() time.Time { return testNow },
@@ -74,7 +74,7 @@ func TestAcceptsGenuineEvidence(t *testing.T) {
 	assert.Empty(t, got["error"])
 	assert.Equal(t, testDeviceID, got["device_id"])
 	assert.Equal(t, "nvs_secret", got["anchor"])
-	assert.Equal(t, "nodemcu-32s", got["model"])
+	assert.NotContains(t, got, "model", "model was dropped from the attributes")
 }
 
 // Defakto documents payload as base64 but sends it verbatim; accept both so a

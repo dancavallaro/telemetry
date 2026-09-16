@@ -27,18 +27,17 @@ func writeEnrollment(t *testing.T, body string) string {
 
 func TestLoadEnrollmentDecodesSecrets(t *testing.T) {
 	secret := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
-	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`","model":"nodemcu-32s"}}`)
+	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`"}}`)
 
 	devices, err := loadEnrollment(path)
 	require.NoError(t, err)
 
 	require.Len(t, devices, 1)
 	assert.Equal(t, []byte("0123456789abcdef0123456789abcdef"), devices["a1b2c3d4e5f6"].Secret)
-	assert.Equal(t, "nodemcu-32s", devices["a1b2c3d4e5f6"].Model)
 }
 
 func TestLoadEnrollmentRejectsBadBase64(t *testing.T) {
-	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"not!base64","model":"x"}}`)
+	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"not!base64"}}`)
 
 	_, err := loadEnrollment(path)
 
@@ -50,7 +49,7 @@ func TestLoadEnrollmentRejectsBadBase64(t *testing.T) {
 // easier to diagnose than every attestation silently failing later.
 func TestLoadEnrollmentRejectsShortSecret(t *testing.T) {
 	secret := base64.StdEncoding.EncodeToString([]byte("too-short"))
-	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`","model":"x"}}`)
+	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`"}}`)
 
 	_, err := loadEnrollment(path)
 
@@ -86,7 +85,7 @@ func TestLoadEnrollmentRejectsMissingFile(t *testing.T) {
 // path or method would only show up after a deploy.
 func TestMuxRoutesAttestAndHealthz(t *testing.T) {
 	secret := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
-	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`","model":"nodemcu-32s"}}`)
+	path := writeEnrollment(t, `{"a1b2c3d4e5f6":{"secret":"`+secret+`"}}`)
 	devices, err := loadEnrollment(path)
 	require.NoError(t, err)
 

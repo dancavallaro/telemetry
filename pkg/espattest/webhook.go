@@ -15,10 +15,9 @@ const rejectInvalid = "invalid evidence"
 
 const rejectStale = "stale evidence"
 
-// Device is one enrolled device's shared secret and reported attributes.
+// Device is one enrolled device's shared secret.
 type Device struct {
 	Secret []byte
-	Model  string
 }
 
 // Verifier serves the extension webhook contract against an enrollment map.
@@ -53,7 +52,6 @@ type attestResponse struct {
 	Error    string `json:"error,omitempty"`
 	DeviceID string `json:"device_id,omitempty"`
 	Anchor   string `json:"anchor,omitempty"`
-	Model    string `json:"model,omitempty"`
 }
 
 func (v *Verifier) Handler() http.Handler {
@@ -94,12 +92,12 @@ func (v *Verifier) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, v.resultFor(e, device))
+	writeJSON(w, v.resultFor(e))
 }
 
 // resultFor replays the stored result for a repeated nonce. The trust domain
 // server retries 5xx, so a repeat must succeed identically rather than reject.
-func (v *Verifier) resultFor(e Evidence, device Device) attestResponse {
+func (v *Verifier) resultFor(e Evidence) attestResponse {
 	key := e.DeviceID + "|" + e.Nonce
 	now := v.now()
 
@@ -118,7 +116,7 @@ func (v *Verifier) resultFor(e Evidence, device Device) attestResponse {
 		}
 	}
 
-	resp := attestResponse{DeviceID: e.DeviceID, Anchor: "nvs_secret", Model: device.Model}
+	resp := attestResponse{DeviceID: e.DeviceID, Anchor: "nvs_secret"}
 	v.seen[key] = replayEntry{at: now, response: resp}
 	v.logf("accepting device_id=%q", e.DeviceID)
 	return resp

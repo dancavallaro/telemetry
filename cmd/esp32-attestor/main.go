@@ -30,7 +30,6 @@ var (
 // enrolledDevice is one entry of the enrollment file.
 type enrolledDevice struct {
 	Secret string `json:"secret"`
-	Model  string `json:"model"`
 }
 
 func main() {
@@ -86,7 +85,7 @@ func loadEnrollment(path string) (map[string]espattest.Device, error) {
 		if len(secret) != secretBytes {
 			return nil, fmt.Errorf("secret for %s is %d bytes, want %d bytes", deviceID, len(secret), secretBytes)
 		}
-		devices[deviceID] = espattest.Device{Secret: secret, Model: entry.Model}
+		devices[deviceID] = espattest.Device{Secret: secret}
 	}
 	return devices, nil
 }

@@ -30,7 +30,7 @@ const (
 )
 
 const usage = `usage:
-  esp32-enroll generate <device_id> <model>
+  esp32-enroll generate <device_id>
   esp32-enroll attest <endpoint> <device_id> <secret-base64>`
 
 func main() {
@@ -42,10 +42,10 @@ func main() {
 
 	switch args[0] {
 	case "generate":
-		if len(args) != 3 {
+		if len(args) != 2 {
 			log.Fatal(usage)
 		}
-		if err := runGenerate(args[1], args[2]); err != nil {
+		if err := runGenerate(args[1]); err != nil {
 			log.Fatalf("generate: %v", err)
 		}
 	case "attest":
@@ -60,12 +60,12 @@ func main() {
 	}
 }
 
-func runGenerate(deviceID, model string) error {
+func runGenerate(deviceID string) error {
 	secret, err := generateSecret()
 	if err != nil {
 		return err
 	}
-	entry, err := enrollmentJSON(deviceID, model, secret)
+	entry, err := enrollmentJSON(deviceID, secret)
 	if err != nil {
 		return err
 	}
@@ -154,9 +154,9 @@ func generateSecret() (string, error) {
 	return base64.StdEncoding.EncodeToString(buf), nil
 }
 
-func enrollmentJSON(deviceID, model, secret string) (string, error) {
+func enrollmentJSON(deviceID, secret string) (string, error) {
 	body, err := json.Marshal(map[string]map[string]string{
-		deviceID: {"secret": secret, "model": model},
+		deviceID: {"secret": secret},
 	})
 	if err != nil {
 		return "", err
