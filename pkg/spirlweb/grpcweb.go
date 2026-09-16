@@ -35,15 +35,25 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("grpc status %d: %s", e.Code, e.Message)
 }
 
-// Call performs one unary gRPC-Web call. fullMethod is "pkg.Service/Method".
-func Call(ctx context.Context, hc *http.Client, baseURL, fullMethod string, req, resp proto.Message) error {
+// EncodeRequest returns the framed gRPC-Web request body, so callers can record
+// the exact bytes a client must put on the wire.
+func EncodeRequest(req proto.Message) ([]byte, error) {
 	body, err := proto.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	return frame(0, body), nil
+}
+
+// Call performs one unary gRPC-Web call. fullMethod is "pkg.Service/Method".
+func Call(ctx context.Context, hc *http.Client, baseURL, fullMethod string, req, resp proto.Message) error {
+	body, err := EncodeRequest(req)
+	if err != nil {
+		return err
 	}
 
 	url := strings.TrimSuffix(baseURL, "/") + "/" + fullMethod
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(frame(0, body)))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}

@@ -44,19 +44,22 @@ func main() {
 
 	verifier := &espattest.Verifier{Devices: devices, Skew: *skew}
 
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           newMux(verifier),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	log.Printf("serving attestation webhook on %s", *addr)
+	log.Fatal(srv.ListenAndServeTLS(*tlsCert, *tlsKey))
+}
+
+func newMux(verifier *espattest.Verifier) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("POST /attest", verifier.Handler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok\n"))
 	})
-
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	log.Printf("serving attestation webhook on %s", *addr)
-	log.Fatal(srv.ListenAndServeTLS(*tlsCert, *tlsKey))
+	return mux
 }
 
 // Enrollment is read once at startup, so adding a device needs a pod restart.

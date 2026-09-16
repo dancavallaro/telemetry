@@ -115,3 +115,28 @@ func TestFrameHeaderIsBigEndian(t *testing.T) {
 	assert.Equal(t, uint32(300), binary.BigEndian.Uint32(f[1:5]))
 	assert.Len(t, f, 305)
 }
+
+// Task 8 diffs the ESP32's framed request against this, so the exact bytes
+// need to be reachable without making a call.
+func TestEncodeRequestIsTheFramedRequestBody(t *testing.T) {
+	req := &pb.FetchX509SVIDRequest{
+		Attestations: []*pb.MethodAttestation{{
+			MethodType:    "extension",
+			MethodVersion: "1.0",
+			Evidence:      []byte(`{"device_id":"a1b2c3d4e5f6"}`),
+		}},
+	}
+
+	body, err := EncodeRequest(req)
+	require.NoError(t, err)
+
+	marshaled, err := proto.Marshal(req)
+	require.NoError(t, err)
+	assert.Equal(t, byte(0), body[0], "data frame flag")
+	assert.Equal(t, uint32(len(marshaled)), binary.BigEndian.Uint32(body[1:5]))
+	assert.Len(t, body, 5+len(marshaled))
+
+	data, _, err := parseFrames(body)
+	require.NoError(t, err)
+	assert.Equal(t, marshaled, data)
+}
