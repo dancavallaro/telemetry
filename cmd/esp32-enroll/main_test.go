@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -10,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/dancavallaro/telemetry/pkg/espattest"
+	pb "github.com/dancavallaro/telemetry/pkg/spirlweb/serverlessapi"
 )
 
 func TestGenerateSecretProducesDistinct32ByteSecrets(t *testing.T) {
@@ -99,4 +103,48 @@ func TestNVSCSVCarriesTheDeviceID(t *testing.T) {
 
 func TestGenerateRejectsInvalidDeviceID(t *testing.T) {
 	assert.Error(t, runGenerate("star|lord"))
+}
+
+func TestGoldenRequestIsDeterministic(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+
+	a, err := goldenRequest("starforge", secret, 1789567213, "46966cf3fdfb685e")
+	require.NoError(t, err)
+	b, err := goldenRequest("starforge", secret, 1789567213, "46966cf3fdfb685e")
+	require.NoError(t, err)
+
+	assert.Equal(t, a, b, "same inputs must produce the same bytes or the firmware cannot be diffed")
+}
+
+// Structural assertions rather than a pinned hex blob: these are the properties
+// the live server accepted, and they survive a legitimate format change being
+// made deliberately.
+func TestGoldenRequestMatchesTheAcceptedWireFormat(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+
+	body, err := goldenRequest("starforge", secret, 1789567213, "46966cf3fdfb685e")
+	require.NoError(t, err)
+
+	assert.Equal(t, byte(0x00), body[0], "data frame flag")
+	assert.Equal(t, uint32(len(body)-5), binary.BigEndian.Uint32(body[1:5]), "frame length must match payload")
+
+	var req pb.FetchX509SVIDRequest
+	require.NoError(t, proto.Unmarshal(body[5:], &req))
+
+	require.Len(t, req.Attestations, 1)
+	assert.Equal(t, "extension", req.Attestations[0].MethodType)
+	assert.Equal(t, "1.0", req.Attestations[0].MethodVersion)
+
+	// proto3 omits an empty cluster_id entirely; a C encoder emitting 0x12 0x00
+	// would produce different bytes. Re-marshalling byte-for-byte proves the
+	// payload holds exactly these fields and nothing more.
+	assert.Empty(t, req.ClusterId)
+	remarshaled, err := proto.Marshal(&req)
+	require.NoError(t, err)
+	assert.Equal(t, body[5:], remarshaled, "payload carries extra or non-canonical fields")
+
+	var e espattest.Evidence
+	require.NoError(t, json.Unmarshal(req.Attestations[0].Evidence, &e))
+	assert.Equal(t, "starforge", e.DeviceID)
+	assert.True(t, e.Verify(secret), "the webhook would reject this evidence")
 }

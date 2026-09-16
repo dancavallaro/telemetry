@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +32,8 @@ const (
 
 const usage = `usage:
   esp32-enroll generate <device_id>
-  esp32-enroll attest <endpoint> <device_id> <secret-base64>`
+  esp32-enroll attest <endpoint> <device_id> <secret-base64>
+  esp32-enroll golden <device_id> <secret-base64> <ts> <nonce>`
 
 func main() {
 	log.SetFlags(0)
@@ -54,6 +56,13 @@ func main() {
 		}
 		if err := runAttest(args[1], args[2], args[3]); err != nil {
 			log.Fatalf("attest: %v", err)
+		}
+	case "golden":
+		if len(args) != 5 {
+			log.Fatal(usage)
+		}
+		if err := runGolden(args[1], args[2], args[3], args[4]); err != nil {
+			log.Fatalf("golden: %v", err)
 		}
 	default:
 		log.Fatal(usage)
@@ -79,15 +88,35 @@ func runGenerate(deviceID string) error {
 	return nil
 }
 
-func runAttest(endpoint, deviceID, secretB64 string) error {
-	secret, err := base64.StdEncoding.DecodeString(secretB64)
+// runGolden prints the exact bytes a client must send for fixed inputs, so the
+// firmware can be diffed against a reference it can actually reproduce.
+func runGolden(deviceID, secretB64, tsArg, nonce string) error {
+	secret, err := decodeSecret(deviceID, secretB64)
 	if err != nil {
-		return fmt.Errorf("decoding secret: %w", err)
+		return err
 	}
-	if len(secret) != secretBytes {
-		return fmt.Errorf("secret is %d bytes, want %d", len(secret), secretBytes)
+	ts, err := strconv.ParseInt(tsArg, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parsing ts: %w", err)
 	}
-	if err := espattest.ValidDeviceID(deviceID); err != nil {
+
+	evidence, err := buildEvidence(deviceID, secret, ts, nonce)
+	if err != nil {
+		return err
+	}
+	framed, err := goldenRequest(deviceID, secret, ts, nonce)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("evidence: %s\n", evidence)
+	fmt.Printf("request:  %s\n", hex.EncodeToString(framed))
+	return nil
+}
+
+func runAttest(endpoint, deviceID, secretB64 string) error {
+	secret, err := decodeSecret(deviceID, secretB64)
+	if err != nil {
 		return err
 	}
 
@@ -95,27 +124,24 @@ func runAttest(endpoint, deviceID, secretB64 string) error {
 	if err != nil {
 		return err
 	}
-	evidence, err := buildEvidence(deviceID, secret, time.Now().Unix(), nonce)
+	ts := time.Now().Unix()
+
+	evidence, err := buildEvidence(deviceID, secret, ts, nonce)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("evidence: %s\n", evidence)
 
-	req := &pb.FetchX509SVIDRequest{
-		Attestations: []*pb.MethodAttestation{{
-			MethodType:    "extension",
-			MethodVersion: "1.0",
-			Evidence:      evidence,
-		}},
-	}
+	req := buildRequest(evidence)
 
-	// Printed before the call so a failing attestation still yields the bytes
-	// Task 8 diffs the firmware against.
+	// Printed before the call so a failing attestation still yields the bytes,
+	// and reproducible via the golden subcommand with this ts and nonce.
 	framed, err := spirlweb.EncodeRequest(req)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("request:  %s\n\n", hex.EncodeToString(framed))
+	fmt.Printf("request:  %s\n", hex.EncodeToString(framed))
+	fmt.Printf("reproduce: esp32-enroll golden %s <secret> %d %s\n\n", deviceID, ts, nonce)
 
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
@@ -150,6 +176,40 @@ func printSVID(svid *pb.X509SVID) {
 		fmt.Printf("not_after: %s (%s from now)\n",
 			cert.NotAfter.Format(time.RFC3339), time.Until(cert.NotAfter).Round(time.Second))
 	}
+}
+
+// buildRequest is shared by attest and golden so the reference bytes can never
+// drift from what is actually sent.
+func buildRequest(evidence []byte) *pb.FetchX509SVIDRequest {
+	return &pb.FetchX509SVIDRequest{
+		Attestations: []*pb.MethodAttestation{{
+			MethodType:    "extension",
+			MethodVersion: "1.0",
+			Evidence:      evidence,
+		}},
+	}
+}
+
+func goldenRequest(deviceID string, secret []byte, ts int64, nonce string) ([]byte, error) {
+	evidence, err := buildEvidence(deviceID, secret, ts, nonce)
+	if err != nil {
+		return nil, err
+	}
+	return spirlweb.EncodeRequest(buildRequest(evidence))
+}
+
+func decodeSecret(deviceID, secretB64 string) ([]byte, error) {
+	if err := espattest.ValidDeviceID(deviceID); err != nil {
+		return nil, err
+	}
+	secret, err := base64.StdEncoding.DecodeString(secretB64)
+	if err != nil {
+		return nil, fmt.Errorf("decoding secret: %w", err)
+	}
+	if len(secret) != secretBytes {
+		return nil, fmt.Errorf("secret is %d bytes, want %d", len(secret), secretBytes)
+	}
+	return secret, nil
 }
 
 func generateSecret() (string, error) {
