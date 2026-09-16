@@ -133,13 +133,57 @@ func writePEM(dir string, svid *pb.X509SVID) error {
 		{"bundle.pem", "CERTIFICATE", svid.GetBundle()},
 	}
 	for _, f := range files {
-		out := f.data
-		if block, _ := pem.Decode(out); block == nil {
-			out = pem.EncodeToMemory(&pem.Block{Type: f.block, Bytes: f.data})
-		}
-		if err := os.WriteFile(filepath.Join(dir, f.name), out, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, f.name), encodePEM(f.data, f.block), 0o600); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// encodePEM emits one PEM block per DER element. The SVID bundle is several
+// concatenated certificates, and wrapping it as a single block hides all but
+// the first from anything that parses it.
+func encodePEM(data []byte, blockType string) []byte {
+	if block, _ := pem.Decode(data); block != nil {
+		return data
+	}
+	var out []byte
+	for _, der := range splitDER(data) {
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der})...)
+	}
+	return out
+}
+
+// splitDER walks concatenated DER elements, returning the remainder whole if it
+// stops looking like one rather than discarding it.
+func splitDER(data []byte) [][]byte {
+	var out [][]byte
+	for off := 0; off < len(data); {
+		n, ok := derElementLen(data[off:])
+		if !ok {
+			return append(out, data[off:])
+		}
+		out = append(out, data[off:off+n])
+		off += n
+	}
+	return out
+}
+
+func derElementLen(b []byte) (int, bool) {
+	if len(b) < 2 || b[0] != 0x30 {
+		return 0, false
+	}
+	if b[1] < 0x80 {
+		return 2 + int(b[1]), 2+int(b[1]) <= len(b)
+	}
+	nbytes := int(b[1] & 0x7f)
+	if nbytes == 0 || nbytes > 4 || len(b) < 2+nbytes {
+		return 0, false
+	}
+	length := 0
+	for _, c := range b[2 : 2+nbytes] {
+		length = length<<8 | int(c)
+	}
+	total := 2 + nbytes + length
+	return total, total <= len(b)
 }
