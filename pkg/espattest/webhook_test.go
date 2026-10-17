@@ -52,6 +52,18 @@ func post(t *testing.T, v *Verifier, e Evidence, encodePayload func([]byte) stri
 	if encodePayload != nil {
 		payload = encodePayload(raw)
 	}
+	return postRaw(t, v, payload)
+}
+
+func postPayload(t *testing.T, v *Verifier, payload string) map[string]string {
+	t.Helper()
+	code, got := postRaw(t, v, payload)
+	require.Equal(t, http.StatusOK, code)
+	return got
+}
+
+func postRaw(t *testing.T, v *Verifier, payload string) (int, map[string]string) {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{
 		"_meta":   map[string]string{"version": "1.0"},
 		"cluster": map[string]string{"cluster_id": ""},

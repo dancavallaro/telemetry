@@ -32,6 +32,7 @@ const (
 
 const usage = `usage:
   esp32-enroll generate <device_id>
+  esp32-enroll tee <device_id> <pubkey-hex>
   esp32-enroll attest <endpoint> <device_id> <secret-base64>
   esp32-enroll golden <device_id> <secret-base64> <ts> <nonce>`
 
@@ -49,6 +50,13 @@ func main() {
 		}
 		if err := runGenerate(args[1]); err != nil {
 			log.Fatalf("generate: %v", err)
+		}
+	case "tee":
+		if len(args) != 3 {
+			log.Fatal(usage)
+		}
+		if err := runTEE(args[1], args[2]); err != nil {
+			log.Fatalf("tee: %v", err)
 		}
 	case "attest":
 		if len(args) != 4 {
@@ -85,6 +93,17 @@ func runGenerate(deviceID string) error {
 	fmt.Printf("device_id: %s\nsecret:    %s\n\n", deviceID, secret)
 	fmt.Printf("--- enrollment entry (merge into the /talos-prod/esp32-enrollment parameter) ---\n%s\n\n", entry)
 	fmt.Printf("--- nvs.csv (flash to the device) ---\n%s\n", nvsCSV(secret))
+	return nil
+}
+
+// runTEE prints the enrollment entry for a TEE attestation key, taken from the
+// device's "TEE attestation key: …" boot log line.
+func runTEE(deviceID, keyHex string) error {
+	entry, err := teeEnrollmentJSON(deviceID, keyHex)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("--- enrollment entry (merge into the /talos-prod/esp32-enrollment parameter, keeping any secret) ---\n%s\n", entry)
 	return nil
 }
 
@@ -221,9 +240,22 @@ func generateSecret() (string, error) {
 }
 
 func enrollmentJSON(deviceID, secret string) (string, error) {
-	body, err := json.Marshal(map[string]map[string]string{
-		deviceID: {"secret": secret},
-	})
+	return entryJSON(deviceID, map[string]string{"secret": secret})
+}
+
+func teeEnrollmentJSON(deviceID, keyHex string) (string, error) {
+	if err := espattest.ValidDeviceID(deviceID); err != nil {
+		return "", err
+	}
+	key, err := espattest.ParseTEEPubKey(keyHex)
+	if err != nil {
+		return "", err
+	}
+	return entryJSON(deviceID, map[string]string{"tee_pubkey": hex.EncodeToString(key)})
+}
+
+func entryJSON(deviceID string, entry map[string]string) (string, error) {
+	body, err := json.Marshal(map[string]map[string]string{deviceID: entry})
 	if err != nil {
 		return "", err
 	}

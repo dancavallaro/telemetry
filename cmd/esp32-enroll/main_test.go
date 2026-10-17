@@ -148,3 +148,33 @@ func TestGoldenRequestMatchesTheAcceptedWireFormat(t *testing.T) {
 	assert.Equal(t, "starforge", e.DeviceID)
 	assert.True(t, e.Verify(secret), "the webhook would reject this evidence")
 }
+
+const testTEEKey = "036d2a12ffea1b016cb7a230e821bdecd29d8bc4efad92fcc0e335df5e215bb350"
+
+// Same contract as the secret entry: esp32-attestor's loadEnrollment parses it.
+func TestTEEEnrollmentJSONMatchesTheWebhookFormat(t *testing.T) {
+	body, err := teeEnrollmentJSON("defakto-demo", testTEEKey)
+	require.NoError(t, err)
+
+	var parsed map[string]map[string]string
+	require.NoError(t, json.Unmarshal([]byte(body), &parsed))
+
+	require.Contains(t, parsed, "defakto-demo")
+	assert.Equal(t, map[string]string{"tee_pubkey": testTEEKey}, parsed["defakto-demo"])
+}
+
+// The key is pasted from a boot log, so normalise it rather than enrol a
+// spelling the webhook compares differently.
+func TestTEEEnrollmentJSONNormalisesKeyCase(t *testing.T) {
+	body, err := teeEnrollmentJSON("defakto-demo", strings.ToUpper(testTEEKey))
+	require.NoError(t, err)
+
+	assert.Contains(t, body, testTEEKey)
+}
+
+func TestTEERejectsInvalidDeviceIDOrKey(t *testing.T) {
+	assert.Error(t, runTEE("star|lord", testTEEKey))
+	assert.Error(t, runTEE("defakto-demo", "04"+strings.Repeat("11", 64)))
+	assert.Error(t, runTEE("defakto-demo", "02"+strings.Repeat("ff", 32)))
+	assert.NoError(t, runTEE("defakto-demo", testTEEKey))
+}

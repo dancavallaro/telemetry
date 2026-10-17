@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -134,4 +135,56 @@ func TestLoadEnrollmentRejectsInvalidDeviceID(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "star|lord")
+}
+
+const testTEEKey = "036d2a12ffea1b016cb7a230e821bdecd29d8bc4efad92fcc0e335df5e215bb350"
+
+func TestLoadEnrollmentDecodesTEEKeyWithoutSecret(t *testing.T) {
+	path := writeEnrollment(t, `{"defakto-demo":{"tee_pubkey":"`+testTEEKey+`"}}`)
+
+	devices, err := loadEnrollment(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, testTEEKey, hex.EncodeToString(devices["defakto-demo"].TEEPubKey))
+	assert.Empty(t, devices["defakto-demo"].Secret)
+}
+
+// A device can carry both, so the firmware can switch attestors without
+// re-enrolling.
+func TestLoadEnrollmentDecodesSecretAndTEEKey(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	path := writeEnrollment(t, `{"defakto-demo":{"secret":"`+secret+`","tee_pubkey":"`+testTEEKey+`"}}`)
+
+	devices, err := loadEnrollment(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, []byte("0123456789abcdef0123456789abcdef"), devices["defakto-demo"].Secret)
+	assert.Equal(t, testTEEKey, hex.EncodeToString(devices["defakto-demo"].TEEPubKey))
+}
+
+func TestLoadEnrollmentRejectsEntryWithNoCredential(t *testing.T) {
+	path := writeEnrollment(t, `{"defakto-demo":{}}`)
+
+	_, err := loadEnrollment(path)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "defakto-demo")
+}
+
+func TestLoadEnrollmentRejectsInvalidTEEKey(t *testing.T) {
+	tests := map[string]string{
+		"bad hex":      "zz",
+		"uncompressed": "04" + strings.Repeat("11", 64),
+		"off curve":    "02" + strings.Repeat("ff", 32),
+	}
+	for name, key := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := writeEnrollment(t, `{"defakto-demo":{"tee_pubkey":"`+key+`"}}`)
+
+			_, err := loadEnrollment(path)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "defakto-demo")
+		})
+	}
 }

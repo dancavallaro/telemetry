@@ -1,6 +1,7 @@
 // esp32-attestor is the Defakto serverless attestation extension webhook for
 // ESP32 devices. It verifies an HMAC-over-timestamp proof against a per-device
-// shared secret and returns attributes that become the device's SPIFFE ID.
+// shared secret, or an ESP-TEE attestation token against an enrolled TEE key,
+// and returns attributes that become the device's SPIFFE ID.
 package main
 
 import (
@@ -27,9 +28,11 @@ var (
 	skew       = flag.Duration("skew", 60*time.Second, "Maximum accepted clock skew on evidence timestamps")
 )
 
-// enrolledDevice is one entry of the enrollment file.
+// enrolledDevice is one entry of the enrollment file; each needs at least one
+// of the two.
 type enrolledDevice struct {
-	Secret string `json:"secret"`
+	Secret    string `json:"secret,omitempty"`
+	TEEPubKey string `json:"tee_pubkey,omitempty"`
 }
 
 func main() {
@@ -81,14 +84,36 @@ func loadEnrollment(path string) (map[string]espattest.Device, error) {
 		if err := espattest.ValidDeviceID(deviceID); err != nil {
 			return nil, err
 		}
-		secret, err := base64.StdEncoding.DecodeString(entry.Secret)
+		device, err := parseEnrolledDevice(entry)
 		if err != nil {
-			return nil, fmt.Errorf("decoding secret for %s: %w", deviceID, err)
+			return nil, fmt.Errorf("enrollment for %s: %w", deviceID, err)
 		}
-		if len(secret) != secretBytes {
-			return nil, fmt.Errorf("secret for %s is %d bytes, want %d bytes", deviceID, len(secret), secretBytes)
-		}
-		devices[deviceID] = espattest.Device{Secret: secret}
+		devices[deviceID] = device
 	}
 	return devices, nil
+}
+
+func parseEnrolledDevice(entry enrolledDevice) (espattest.Device, error) {
+	var device espattest.Device
+	if entry.Secret == "" && entry.TEEPubKey == "" {
+		return device, fmt.Errorf("needs a secret, a tee_pubkey, or both")
+	}
+	if entry.Secret != "" {
+		secret, err := base64.StdEncoding.DecodeString(entry.Secret)
+		if err != nil {
+			return device, fmt.Errorf("decoding secret: %w", err)
+		}
+		if len(secret) != secretBytes {
+			return device, fmt.Errorf("secret is %d bytes, want %d bytes", len(secret), secretBytes)
+		}
+		device.Secret = secret
+	}
+	if entry.TEEPubKey != "" {
+		key, err := espattest.ParseTEEPubKey(entry.TEEPubKey)
+		if err != nil {
+			return device, err
+		}
+		device.TEEPubKey = key
+	}
+	return device, nil
 }
