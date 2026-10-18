@@ -18,6 +18,6 @@ fi
 
 go test ./...
 
-for app in heartbeats serial-logger volsync-metrics cluster-heartbeat esp32-attestor; do
+for app in heartbeats serial-logger volsync-metrics cluster-heartbeat; do
   build_app "$app"
 done
